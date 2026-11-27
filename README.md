@@ -27,8 +27,8 @@ No Xcode or developer tools are needed to install the downloaded app.
 ## Install
 
 1. Open the [Releases page](https://github.com/mradrianhh/TN3270-Mac/releases).
-2. Download **TN3270Mac-arm64.zip** from the release's **Assets** section,
-   not the source-code archives.
+2. Download the **TN3270Mac** ZIP from the release's **Assets** section
+   (for example, **TN3270Mac-v1.0.3-arm64.zip**), not the source-code archives.
 3. Double-click the ZIP in Finder to extract it.
 4. Drag **TN3270Mac.app** into **Applications**.
 5. Open **TN3270Mac** from Applications.

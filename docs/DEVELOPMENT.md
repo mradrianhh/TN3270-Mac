@@ -90,6 +90,16 @@ it as an app with an ad-hoc signature for local use. It does not require an Appl
 Developer account. Distribution to other Macs requires separate Developer ID
 signing and notarization for normal Gatekeeper approval.
 
+Each successful run increments the patch number in [VERSION](../VERSION) (starting
+from `1.0.2`, so the next build is `1.0.3`) and uses it for both app bundle version
+fields. Edit the major/minor numbers in that file manually when needed; the patch
+number is incremented on the next build. Failed builds do not advance the version.
+
+The script also creates `releases/TN3270Mac-v<version>-<architecture>.zip`.
+The ZIP contains only `TN3270Mac.app` (the executable, icon, metadata and signature),
+not source code or other build files. Existing release ZIPs are never overwritten.
+Generated ZIPs are ignored by Git; upload the ZIP as a GitHub release asset.
+
 The app icon is generated from [Resources/AppIcon.png](../Resources/AppIcon.png) during packaging. To change
 it, replace that image with a square PNG (ideally 1024 × 1024) and rebuild.
 
