@@ -6,6 +6,8 @@ import TN3270Core
 final class TerminalSelectionTests: XCTestCase {
     private func fixture() -> (AppModel, TerminalNSView) {
         let model = AppModel(defaults: UserDefaults(suiteName: UUID().uuidString)!)
+        // Block selection is the default; most tests here exercise linear selection.
+        model.blockSelection = false
         model.session.processor.screen.clear(rows: 3, columns: 4)
         for (address, byte) in model.session.codePage.encode("ABCDEFGHIJKL").enumerated() {
             model.session.processor.screen[address].byte = byte
@@ -26,13 +28,14 @@ final class TerminalSelectionTests: XCTestCase {
         view.keyDown(with: event)
     }
 
-    private func mouse(_ type: NSEvent.EventType, boundary: Int, in view: TerminalNSView) {
+    private func mouse(_ type: NSEvent.EventType, boundary: Int, in view: TerminalNSView,
+                       modifierFlags: NSEvent.ModifierFlags = []) {
         let font = NSFont.monospacedSystemFont(ofSize: 100, weight: .regular)
         let width = ("W" as NSString).size(withAttributes: [.font: font]).width
         let height = ((font.ascender - font.descender + font.leading) * 1.1).rounded(.up)
         let point = NSPoint(x: 4 + CGFloat(boundary % 4) * width,
                             y: 4 + (CGFloat(boundary / 4) + 0.25) * height)
-        let event = NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil), modifierFlags: [],
+        let event = NSEvent.mouseEvent(with: type, location: view.convert(point, to: nil), modifierFlags: modifierFlags,
                                       timestamp: 0, windowNumber: 0, context: nil,
                                       eventNumber: 0, clickCount: 1, pressure: 1)!
         if type == .leftMouseDown { view.mouseDown(with: event) } else { view.mouseDragged(with: event) }
@@ -85,6 +88,50 @@ final class TerminalSelectionTests: XCTestCase {
         XCTAssertEqual(view.selectedText, "CD\nEF")
         mouse(.leftMouseDown, boundary: 0, in: view)
         XCTAssertNil(view.selectedText)
+    }
+
+    func testBlockMouseSelectionViaToggleWorksInEitherDirection() {
+        let (model, view) = fixture()
+        model.blockSelection = true
+        mouse(.leftMouseDown, boundary: 1, in: view)
+        mouse(.leftMouseDragged, boundary: 11, in: view)
+        XCTAssertEqual(view.selectedText, "BC\nFG\nJK")
+
+        mouse(.leftMouseDown, boundary: 11, in: view)
+        mouse(.leftMouseDragged, boundary: 1, in: view)
+        XCTAssertEqual(view.selectedText, "BC\nFG\nJK")
+    }
+
+    func testOptionInvertsMouseSelectionMode() {
+        let (model, view) = fixture()
+        mouse(.leftMouseDown, boundary: 1, in: view, modifierFlags: .option)
+        mouse(.leftMouseDragged, boundary: 11, in: view)
+        XCTAssertEqual(view.selectedText, "BC\nFG\nJK")
+
+        model.blockSelection = true
+        mouse(.leftMouseDown, boundary: 1, in: view, modifierFlags: .option)
+        mouse(.leftMouseDragged, boundary: 11, in: view)
+        XCTAssertEqual(view.selectedText, "BCD\nEFGH\nIJK")
+    }
+
+    func testShiftArrowsExtendBlockSelectionByRowAndColumn() {
+        let (model, view) = fixture()
+        model.blockSelection = true
+        model.session.moveCursor(to: 1)
+        arrow(124, in: view)
+        arrow(125, in: view)
+        arrow(125, in: view)
+        XCTAssertEqual(view.selectedText, "B\nF\nJ")
+        arrow(123, in: view)
+        XCTAssertNil(view.selectedText)
+    }
+
+    func testBlockSelectionIsDefaultAndPreferenceIsPersisted() {
+        let defaults = UserDefaults(suiteName: UUID().uuidString)!
+        let model = AppModel(defaults: defaults)
+        XCTAssertTrue(model.blockSelection)
+        model.blockSelection = false
+        XCTAssertFalse(AppModel(defaults: defaults).blockSelection)
     }
 
     func testSelectionDoesNotExposeNonDisplayFields() {

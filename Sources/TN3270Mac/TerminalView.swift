@@ -33,10 +33,46 @@ final class TerminalNSView: NSView {
     private struct TextSelection {
         var anchor: Int
         var head: Int
+        var blockAnchor: (row: Int, column: Int)?
+        var blockHead: (row: Int, column: Int)?
+        let isBlock: Bool
         let rows: Int
         let columns: Int
 
+        init(anchor: Int, head: Int, rows: Int, columns: Int) {
+            self.anchor = anchor
+            self.head = head
+            self.blockAnchor = nil
+            self.blockHead = nil
+            self.isBlock = false
+            self.rows = rows
+            self.columns = columns
+        }
+
+        init(blockAnchor: (row: Int, column: Int), blockHead: (row: Int, column: Int),
+             rows: Int, columns: Int) {
+            self.anchor = 0
+            self.head = 0
+            self.blockAnchor = blockAnchor
+            self.blockHead = blockHead
+            self.isBlock = true
+            self.rows = rows
+            self.columns = columns
+        }
+
         var range: Range<Int> { min(anchor, head)..<max(anchor, head) }
+
+        func contains(address: Int) -> Bool {
+            if isBlock {
+                guard let blockAnchor, let blockHead else { return false }
+                let row = address / columns
+                let column = address % columns
+                let rowRange = min(blockAnchor.row, blockHead.row)...max(blockAnchor.row, blockHead.row)
+                let columnRange = min(blockAnchor.column, blockHead.column)..<max(blockAnchor.column, blockHead.column)
+                return rowRange.contains(row) && columnRange.contains(column)
+            }
+            return range.contains(address)
+        }
     }
 
     private var selection: TextSelection? {
@@ -50,8 +86,23 @@ final class TerminalNSView: NSView {
     }
 
     var selectedText: String? {
-        guard let model, let range = currentSelection?.range, !range.isEmpty else { return nil }
+        guard let model, let selection = currentSelection else { return nil }
         let screen = model.session.screen
+        if selection.isBlock {
+            guard let anchor = selection.blockAnchor, let head = selection.blockHead,
+                  anchor.column != head.column else { return nil }
+            let firstRow = min(anchor.row, head.row)
+            let lastRow = max(anchor.row, head.row)
+            let firstColumn = min(anchor.column, head.column)
+            let lastColumn = max(anchor.column, head.column)
+            return (firstRow...lastRow).map { row in
+                String((firstColumn..<lastColumn).map { column in
+                    screen.displayCharacter(at: row * screen.columns + column, codePage: model.session.codePage)
+                })
+            }.joined(separator: "\n")
+        }
+        let range = selection.range
+        guard !range.isEmpty else { return nil }
         var text = ""
         for address in range {
             if address > range.lowerBound && address % screen.columns == 0 { text.append("\n") }
@@ -118,7 +169,7 @@ final class TerminalNSView: NSView {
         let codePage = session.codePage
         let metrics = computeMetrics(rows: screen.rows, columns: screen.columns)
         let appearances = screen.appearances()
-        let selectedRange = currentSelection?.range
+        let selectedSelection = currentSelection
 
         for row in 0..<screen.rows {
             for column in 0..<screen.columns {
@@ -135,7 +186,7 @@ final class TerminalNSView: NSView {
                     foreground = background ?? backgroundColor
                     background = previousForeground
                 }
-                if selectedRange?.contains(address) == true {
+                if selectedSelection?.contains(address: address) == true {
                     foreground = .selectedTextColor
                     background = .selectedTextBackgroundColor
                 }
@@ -230,28 +281,46 @@ final class TerminalNSView: NSView {
         guard let model, let stroke = KeyEventMapper.stroke(for: event),
               stroke.modifiers == .shift else { return false }
         let screen = model.session.screen
-        let offset: Int
+        let delta: (row: Int, column: Int)
         switch stroke.key {
-        case KeyStroke.Named.left: offset = -1
-        case KeyStroke.Named.right: offset = 1
-        case KeyStroke.Named.up: offset = -screen.columns
-        case KeyStroke.Named.down: offset = screen.columns
+        case KeyStroke.Named.left: delta = (0, -1)
+        case KeyStroke.Named.right: delta = (0, 1)
+        case KeyStroke.Named.up: delta = (-1, 0)
+        case KeyStroke.Named.down: delta = (1, 0)
         default: return false
         }
-        var selection = currentSelection ?? TextSelection(
-            anchor: screen.cursor, head: screen.cursor, rows: screen.rows, columns: screen.columns)
-        selection.head = min(screen.size, max(0, selection.head + offset))
+        var selection: TextSelection
+        if let currentSelection {
+            selection = currentSelection
+        } else if model.blockSelection {
+            let cursor = (row: screen.row(of: screen.cursor), column: screen.column(of: screen.cursor))
+            selection = TextSelection(blockAnchor: cursor, blockHead: cursor,
+                                      rows: screen.rows, columns: screen.columns)
+        } else {
+            selection = TextSelection(anchor: screen.cursor, head: screen.cursor,
+                                      rows: screen.rows, columns: screen.columns)
+        }
+        if selection.isBlock, var blockHead = selection.blockHead {
+            blockHead.row = min(screen.rows - 1, max(0, blockHead.row + delta.row))
+            blockHead.column = min(screen.columns, max(0, blockHead.column + delta.column))
+            selection.blockHead = blockHead
+        } else {
+            let offset = delta.row * screen.columns + delta.column
+            selection.head = min(screen.size, max(0, selection.head + offset))
+        }
         self.selection = selection
         return true
     }
 
-    private func mousePosition(for event: NSEvent, screen: ScreenBuffer) -> (row: Int, column: Int, boundary: Int) {
+    private func mousePosition(for event: NSEvent, screen: ScreenBuffer) ->
+        (row: Int, column: Int, columnBoundary: Int, boundary: Int) {
         let metrics = computeMetrics(rows: screen.rows, columns: screen.columns)
         let point = convert(event.locationInWindow, from: nil)
         let x = (point.x - metrics.origin.x) / metrics.cellWidth
         let y = (point.y - metrics.origin.y) / metrics.cellHeight
         let row = min(screen.rows - 1, max(0, Int(y.rounded(.down))))
         let column = min(screen.columns - 1, max(0, Int(x.rounded(.down))))
+        let columnBoundary = min(screen.columns, max(0, Int(x.rounded())))
         let boundary: Int
         if y < 0 {
             boundary = 0
@@ -260,7 +329,7 @@ final class TerminalNSView: NSView {
         } else {
             boundary = row * screen.columns + min(screen.columns, max(0, Int(x.rounded())))
         }
-        return (row, column, boundary)
+        return (row, column, columnBoundary, boundary)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -268,14 +337,26 @@ final class TerminalNSView: NSView {
         guard let model else { return }
         let screen = model.session.screen
         let position = mousePosition(for: event, screen: screen)
-        selection = TextSelection(anchor: position.boundary, head: position.boundary,
-                                  rows: screen.rows, columns: screen.columns)
+        let isBlock = model.blockSelection != event.modifierFlags.contains(.option)
+        if isBlock {
+            let point = (row: position.row, column: position.columnBoundary)
+            selection = TextSelection(blockAnchor: point, blockHead: point,
+                                      rows: screen.rows, columns: screen.columns)
+        } else {
+            selection = TextSelection(anchor: position.boundary, head: position.boundary,
+                                      rows: screen.rows, columns: screen.columns)
+        }
         model.moveCursor(row: position.row, column: position.column)
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let model, var selection = currentSelection else { return }
-        selection.head = mousePosition(for: event, screen: model.session.screen).boundary
+        let position = mousePosition(for: event, screen: model.session.screen)
+        if selection.isBlock {
+            selection.blockHead = (row: position.row, column: position.columnBoundary)
+        } else {
+            selection.head = position.boundary
+        }
         self.selection = selection
     }
 

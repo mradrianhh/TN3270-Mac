@@ -40,6 +40,10 @@ Run the commands below from the repository root.
 - **Text selection**: drag with the mouse or hold Shift and use the arrow keys,
   then press Cmd+C to copy the highlighted text. Selection is local and needs no
   host key mapping. Without a selection, Copy continues to copy the whole screen.
+- **Block selection** (Edit ▸ Block Selection, ⌥⌘B, on by default): selects a
+  rectangle of cells instead of a run of text, and copies one line per row. The
+  status bar shows BLOCK while it is on. Holding Option while dragging switches mode for
+  that one selection. The setting is saved.
 
 ### Default key map
 

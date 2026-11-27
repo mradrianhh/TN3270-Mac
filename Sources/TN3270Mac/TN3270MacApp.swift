@@ -61,6 +61,9 @@ struct TerminalWindow: View {
                 Text(model.statusText)
                     .lineLimit(1)
                 Spacer()
+                if model.blockSelection {
+                    Text("BLOCK")
+                }
                 Text(model.settings.codePage.id)
                 let screen = model.session.screen
                 Text(String(format: "%03d/%03d", screen.row(of: screen.cursor) + 1, screen.column(of: screen.cursor) + 1))
@@ -105,6 +108,11 @@ struct TerminalCommands: Commands {
     @ObservedObject var model: AppModel
 
     var body: some Commands {
+        CommandGroup(after: .pasteboard) {
+            Divider()
+            Toggle("Block Selection", isOn: $model.blockSelection)
+                .keyboardShortcut("b", modifiers: [.command, .option])
+        }
         CommandMenu("Connection") {
             ConnectMenuButton(model: model)
                 .keyboardShortcut("k", modifiers: .command)

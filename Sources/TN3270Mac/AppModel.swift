@@ -7,6 +7,7 @@ final class AppModel: ObservableObject {
     private enum DefaultsKey {
         static let connectionSettings = "connectionSettings"
         static let keyMap = "keyMap"
+        static let blockSelection = "blockSelection"
     }
 
     /// Persisted connection options. Changes take effect on the next connection.
@@ -22,6 +23,11 @@ final class AppModel: ObservableObject {
         didSet { save(keyMap, forKey: DefaultsKey.keyMap) }
     }
 
+    /// Persisted preference for rectangular terminal selection.
+    @Published var blockSelection: Bool {
+        didSet { defaults.set(blockSelection, forKey: DefaultsKey.blockSelection) }
+    }
+
     /// Incremented whenever the screen or session status changes.
     @Published private(set) var revision = 0
 
@@ -30,6 +36,7 @@ final class AppModel: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        self.blockSelection = defaults.object(forKey: DefaultsKey.blockSelection) as? Bool ?? true
         let settings = Self.load(ConnectionSettings.self, forKey: DefaultsKey.connectionSettings, from: defaults)
             ?? ConnectionSettings()
         self.settings = settings

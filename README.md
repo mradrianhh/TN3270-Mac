@@ -12,7 +12,7 @@ text selection and copying.
 - Multiple EBCDIC code pages for different host languages.
 - Customizable keyboard shortcuts for Enter, PF keys, PA keys and other
   mainframe functions.
-- Mouse-drag and Shift+Arrow text selection, with Cmd+C to copy.
+- Mouse-drag and Shift+Arrow text selection, including rectangular block selection, with Cmd+C to copy.
 - Saved connection settings and keyboard mappings.
 
 ## Requirements
@@ -70,6 +70,7 @@ menu to connect or disconnect.
 | Clear | Esc |
 | Reset the keyboard | Control+R |
 | Select text | Drag with the mouse or hold Shift and use the arrow keys |
+| Toggle block selection (on by default) | Option+Cmd+B, or hold Option while dragging |
 | Copy selected text | Cmd+C |
 
 Without a selection, Copy copies the whole screen. **Control+C sends Attention
