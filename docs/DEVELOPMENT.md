@@ -17,8 +17,20 @@ Run the commands below from the repository root.
   Query, Erase/Reset, Outbound 3270DS) and all orders (SF, SFE, SBA, SA, MF, IC,
   PT, RA, EUA, GE), extended colors and highlighting.
 - Terminal models 2 (24×80), 3 (32×80), 4 (43×80) and 5 (27×132).
+- Terminal sizing uses the view's safe area and final rounded cell dimensions
+  to keep every row clear of the title bar and status area.
+- Field-attribute positions remain blank without reverse video or background
+  color, preserving separators between highlighted fields.
 - EBCDIC code pages 037, 273, 277, 278, 280, 284, 285, 297, 500, 1047 and the
   Euro variants 1140–1148.
+- Read Partition Query and Query List report Character Sets (`0x85`) with
+  the configured code page's CGCSGID (GCSGID 697, or 695 for Euro variants).
+  Only the base single-byte set (LCID 0) is advertised, not APL or DBCS.
+  Query List supports List, Equivalent+List and All; unsupported lists return
+  a Null reply.
+- Compatibility exception: selecting 277 advertises the Euro-capable 1142
+  CGCSGID (GCSGID 695, CPGID 1142), while retaining 277 translation. Select
+  1142 explicitly when Euro-aware encoding and decoding are also needed.
 - **Connection Options** window (Connection ▸ Connection Options…, ⇧⌘,): host /
   IP address, port, EBCDIC code page, terminal model, LU name, TN3270E and TLS.
 - **Keyboard Options** window (Keyboard ▸ Keyboard Options…, ⌥⌘K): map any Mac

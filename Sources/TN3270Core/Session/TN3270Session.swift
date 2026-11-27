@@ -43,7 +43,7 @@ public final class TN3270Session {
         self.negotiator = TelnetNegotiator(terminalType: settings.model.terminalType,
                                            allowTN3270E: settings.useTN3270E,
                                            luName: settings.luName.isEmpty ? nil : settings.luName)
-        self.processor = DataStreamProcessor(model: settings.model)
+        self.processor = DataStreamProcessor(model: settings.model, codePage: settings.codePage)
 
         negotiator.send = { [weak self] bytes in self?.send(bytes) }
         negotiator.onRecord = { [weak self] record in self?.handleRecord(record) }
@@ -61,6 +61,7 @@ public final class TN3270Session {
     public func update(settings: ConnectionSettings) {
         self.settings = settings
         self.codePage = settings.codePage
+        processor.codePage = settings.codePage
         negotiator.terminalType = settings.model.terminalType
         negotiator.allowTN3270E = settings.useTN3270E
         negotiator.luName = settings.luName.isEmpty ? nil : settings.luName

@@ -200,10 +200,10 @@ public struct ScreenBuffer: Sendable {
 
         return CellAppearance(
             foreground: foreground,
-            background: background,
+            background: cell.isFieldAttribute ? .default : background,
             intensified: intensified,
             hidden: hidden || cell.isFieldAttribute,
-            reverse: hlByte == Highlight.reverse.rawValue,
+            reverse: !cell.isFieldAttribute && hlByte == Highlight.reverse.rawValue,
             underscore: !cell.isFieldAttribute && hlByte == Highlight.underscore.rawValue,
             blink: hlByte == Highlight.blink.rawValue
         )

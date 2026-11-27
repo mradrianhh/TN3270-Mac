@@ -15,6 +15,8 @@ public struct DataStreamResult: Equatable, Sendable {
 /// Interprets the outbound 3270 data stream and builds inbound replies.
 public final class DataStreamProcessor {
     public var screen: ScreenBuffer
+    /// Host code page reported in Character Sets query replies.
+    public var codePage: CodePage
     /// Default (Erase/Write) screen size. Always 24x80 for 3278 models.
     public let defaultRows = 24
     public let defaultColumns = 80
@@ -24,7 +26,8 @@ public final class DataStreamProcessor {
     /// The last AID sent to the host; used to answer host initiated reads.
     public var lastAID: UInt8 = DS.AID.none
 
-    public init(model: TerminalModel = .model2) {
+    public init(model: TerminalModel = .model2, codePage: CodePage = .default) {
+        self.codePage = codePage
         alternateRows = model.rows
         alternateColumns = model.columns
         screen = ScreenBuffer(rows: 24, columns: 80)
@@ -264,7 +267,20 @@ public final class DataStreamProcessor {
                     let type = body[1]
                     if body[0] == 0xFF && (type == DS.StructuredField.readPartitionQuery
                                            || type == DS.StructuredField.readPartitionQueryList) {
-                        result.replies.append(queryReply())
+                        if type == DS.StructuredField.readPartitionQuery {
+                            result.replies.append(queryReply())
+                        } else if body.count < 3 {
+                            result.commandRejected = true
+                        } else {
+                            switch body[2] {
+                            case 0x00:
+                                result.replies.append(queryReply(requestedCodes: Array(body.dropFirst(3))))
+                            case 0x40, 0x80:
+                                result.replies.append(queryReply())
+                            default:
+                                result.commandRejected = true
+                            }
+                        }
                     } else if DS.Command.readBuffer.contains(type) {
                         result.replies.append(readBuffer(aid: lastAID))
                     } else if DS.Command.readModified.contains(type) {
@@ -292,15 +308,16 @@ public final class DataStreamProcessor {
     }
 
     /// Builds the Query Reply sent in response to Read Partition (Query).
-    public func queryReply() -> [UInt8] {
+    public func queryReply(requestedCodes: [UInt8]? = nil) -> [UInt8] {
         func field(_ code: UInt8, _ body: [UInt8]) -> [UInt8] {
+            if let requestedCodes, !requestedCodes.contains(code) { return [] }
             let length = body.count + 4
             return [UInt8(length >> 8), UInt8(length & 0xFF), DS.StructuredField.queryReply, code] + body
         }
         func be16(_ value: Int) -> [UInt8] { [UInt8((value >> 8) & 0xFF), UInt8(value & 0xFF)] }
 
         let codes: [UInt8] = [
-            DS.QueryCode.summary, DS.QueryCode.usableArea, DS.QueryCode.color,
+            DS.QueryCode.summary, DS.QueryCode.usableArea, DS.QueryCode.characterSets, DS.QueryCode.color,
             DS.QueryCode.highlighting, DS.QueryCode.replyModes, DS.QueryCode.implicitPartition,
         ]
         var reply: [UInt8] = [DS.AID.structuredField]
@@ -311,6 +328,13 @@ public final class DataStreamProcessor {
         usableArea += [0x01, 0x00, 0x0A, 0x02, 0xE5, 0x00, 0x02, 0x00, 0x6F, 0x09, 0x0C]
         usableArea += be16(alternateColumns * alternateRows)
         reply += field(DS.QueryCode.usableArea, usableArea)
+        // One non-loadable SBCS set (LCID 0), with a four-byte CGCSGID.
+        let cgcsgid = codePage.cgcsgid
+        reply += field(DS.QueryCode.characterSets,
+                       [0x02, 0x00, 0x09, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x07,
+                        0x00, 0x10, 0x00,
+                        UInt8(truncatingIfNeeded: cgcsgid >> 24), UInt8(truncatingIfNeeded: cgcsgid >> 16),
+                        UInt8(truncatingIfNeeded: cgcsgid >> 8), UInt8(truncatingIfNeeded: cgcsgid)])
         var colors: [UInt8] = [0x00, 0x10, 0x00, HostColor.green.rawValue]
         for color in UInt8(0xF1)...UInt8(0xFF) { colors += [color, color] }
         reply += field(DS.QueryCode.color, colors)
@@ -320,6 +344,9 @@ public final class DataStreamProcessor {
         reply += field(DS.QueryCode.implicitPartition,
                        [0x00, 0x00, 0x0B, 0x01, 0x00] + be16(defaultColumns) + be16(defaultRows)
                        + be16(alternateColumns) + be16(alternateRows))
+        if reply.count == 1 {
+            reply += [0x00, 0x04, DS.StructuredField.queryReply, DS.QueryCode.null]
+        }
         return reply
     }
 

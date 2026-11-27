@@ -6,6 +6,17 @@ public struct CodePage: Identifiable, Hashable, Sendable {
     /// Human readable description.
     public let name: String
 
+    /// Combined graphic character set and code page ID for 3270 Character Sets queries.
+    public var cgcsgid: UInt32 {
+        guard let configuredNumber = UInt16(id) else {
+            preconditionFailure("Code page IDs must be numeric 16-bit identifiers")
+        }
+        // Advertise the Euro-capable Denmark/Norway set without changing translation.
+        let number: UInt16 = configuredNumber == 277 ? 1142 : configuredNumber
+        let characterSet: UInt32 = (1140...1148).contains(number) ? 695 : 697
+        return characterSet << 16 | UInt32(number)
+    }
+
     private let toUnicode: [UInt16]
     private let fromUnicode: [UInt16: UInt8]
 

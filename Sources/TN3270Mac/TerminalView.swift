@@ -70,7 +70,7 @@ final class TerminalNSView: NSView {
 
     // MARK: - Geometry
 
-    private struct Metrics {
+    struct Metrics {
         let font: NSFont
         let boldFont: NSFont
         let cellWidth: CGFloat
@@ -78,24 +78,32 @@ final class TerminalNSView: NSView {
         let origin: CGPoint
     }
 
-    private func computeMetrics(rows: Int, columns: Int) -> Metrics {
+    func computeMetrics(rows: Int, columns: Int) -> Metrics {
         let referenceSize: CGFloat = 100
         let reference = NSFont.monospacedSystemFont(ofSize: referenceSize, weight: .regular)
         let referenceWidth = ("W" as NSString).size(withAttributes: [.font: reference]).width
         let referenceHeight = reference.ascender - reference.descender + reference.leading
 
-        let available = bounds.insetBy(dx: 4, dy: 4)
+        let available = safeAreaRect.insetBy(dx: 4, dy: 4)
         let byWidth = available.width / (CGFloat(columns) * referenceWidth / referenceSize)
         let byHeight = available.height / (CGFloat(rows) * referenceHeight * 1.1 / referenceSize)
-        let size = max(6, min(byWidth, byHeight).rounded(.down))
+        var size = max(6, min(byWidth, byHeight).rounded(.down))
 
-        let font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
-        let boldFont = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
-        let cellWidth = ("W" as NSString).size(withAttributes: [.font: font]).width
-        let cellHeight = ((font.ascender - font.descender + font.leading) * 1.1).rounded(.up)
-        let origin = CGPoint(x: (bounds.width - cellWidth * CGFloat(columns)) / 2,
-                             y: (bounds.height - cellHeight * CGFloat(rows)) / 2)
-        return Metrics(font: font, boldFont: boldFont, cellWidth: cellWidth, cellHeight: cellHeight, origin: origin)
+        while true {
+            let font = NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+            let cellWidth = ("W" as NSString).size(withAttributes: [.font: font]).width
+            let cellHeight = ((font.ascender - font.descender + font.leading) * 1.1).rounded(.up)
+            // Per-row rounding can make the grid taller than the reference estimate.
+            if size > 6 && (cellWidth * CGFloat(columns) > available.width
+                           || cellHeight * CGFloat(rows) > available.height) {
+                size -= 1
+                continue
+            }
+            let boldFont = NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
+            let origin = CGPoint(x: available.midX - cellWidth * CGFloat(columns) / 2,
+                                 y: available.midY - cellHeight * CGFloat(rows) / 2)
+            return Metrics(font: font, boldFont: boldFont, cellWidth: cellWidth, cellHeight: cellHeight, origin: origin)
+        }
     }
 
     // MARK: - Drawing
@@ -165,7 +173,7 @@ final class TerminalNSView: NSView {
             }
         } else if !session.nvtText.isEmpty {
             (session.nvtText as NSString).draw(
-                in: bounds.insetBy(dx: 8, dy: 8),
+                in: safeAreaRect.insetBy(dx: 8, dy: 8),
                 withAttributes: [.font: metrics.font, .foregroundColor: NSColor.systemGreen])
         }
     }

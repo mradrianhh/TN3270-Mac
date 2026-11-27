@@ -92,10 +92,12 @@ public enum DS {
     public enum QueryCode {
         public static let summary: UInt8 = 0x80
         public static let usableArea: UInt8 = 0x81
+        public static let characterSets: UInt8 = 0x85
         public static let color: UInt8 = 0x86
         public static let highlighting: UInt8 = 0x87
         public static let replyModes: UInt8 = 0x88
         public static let implicitPartition: UInt8 = 0xA6
+        public static let null: UInt8 = 0xFF
     }
 
     /// The 6-bit translation table used for 12-bit addresses and attribute bytes.

@@ -86,6 +86,23 @@ older app to avoid keeping two copies.
 
 ## Help and development
 
+### Query Monitor reports CQM244E
+
+The emulator reports the EBCDIC code page selected in **Connection Options**
+through the 3270 Character Sets query reply. After updating the app, reconnect
+and start a new ISPF session so ISPF can query the terminal again.
+
+For compatibility, code page **277** is reported to the host as **1142**,
+but text translation remains 277. Select **1142** explicitly to enable Euro
+character translation as well.
+
+In ISPF **7.3 (Dialog Test > Variables)**, check `ZTERMCID`, `ZTERMCP`,
+`ZTERMCP5`, `ZTERMCS` and `ZTERMCS5`. If the terminal CCSID is still blank or zero,
+ask your host administrator to check VTAM/LOGMODE query support. See
+[IBM's CQM244E troubleshooting guidance](https://www.ibm.com/support/pages/cqm244e-unable-determine-terminal-ccsid-coded-character-set-identifier-ccsid-terminal-cannot-be-determined).
+
+### Reporting issues
+
 Report bugs or request features on the
 [Issues page](https://github.com/mradrianhh/TN3270-Mac/issues). Include your macOS
 version and app version, but do not share passwords or sensitive host data.

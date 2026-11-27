@@ -64,6 +64,42 @@ final class DataStreamTests: XCTestCase {
         XCTAssertTrue(appearances[2].underscore)
     }
 
+    func testReverseVideoLeavesFieldAttributeSeparatorsBlank() {
+        let processor = DataStreamProcessor()
+        let field: [UInt8] = [0x29, 0x03, 0xC0, 0x60, 0x42, 0xF6, 0x41, 0xF2]
+        processor.process([0xF5, 0xC3] + field + cp.encode("-TNFPROD")
+                          + field + cp.encode("*TNFPROD"))
+        let appearances = processor.screen.appearances()
+
+        for address in [0, 9] {
+            XCTAssertTrue(processor.screen[address].isFieldAttribute)
+            XCTAssertTrue(appearances[address].hidden)
+            XCTAssertFalse(appearances[address].reverse)
+            XCTAssertFalse(processor.screen.appearance(at: address).reverse)
+        }
+        for address in [1, 8, 10, 17] {
+            XCTAssertTrue(appearances[address].reverse)
+            XCTAssertEqual(appearances[address].foreground, .yellow)
+        }
+        XCTAssertEqual(processor.screen.text(row: 0, codePage: cp).prefix(18),
+                       " -TNFPROD *TNFPROD")
+    }
+
+    func testBackgroundColorLeavesFieldAttributeSeparatorsBlank() {
+        let processor = DataStreamProcessor()
+        let field: [UInt8] = [0x29, 0x02, 0xC0, 0x60, 0x45, 0xF6]
+        processor.process([0xF5, 0xC3] + field + cp.encode("A") + field + cp.encode("B"))
+        let appearances = processor.screen.appearances()
+
+        for address in [0, 2] {
+            XCTAssertEqual(appearances[address].background, .default)
+            XCTAssertEqual(processor.screen.appearance(at: address).background, .default)
+        }
+        for address in [1, 3] {
+            XCTAssertEqual(appearances[address].background, .yellow)
+        }
+    }
+
     func testEraseWriteAlternateUsesModelSize() {
         let processor = DataStreamProcessor(model: .model5)
         processor.process([0x7E, 0xC3])
@@ -86,13 +122,70 @@ final class DataStreamTests: XCTestCase {
             let length = Int(reply[index]) << 8 | Int(reply[index + 1])
             XCTAssertEqual(reply[index + 2], 0x81)
             codes.append(reply[index + 3])
+            if reply[index + 3] == DS.QueryCode.summary {
+                XCTAssertEqual(Array(reply[(index + 4)..<(index + length)]),
+                               [0x80, 0x81, 0x85, 0x86, 0x87, 0x88, 0xA6])
+            }
+            if reply[index + 3] == DS.QueryCode.characterSets {
+                XCTAssertEqual(Array(reply[index..<(index + length)]),
+                               [0x00, 0x14, 0x81, 0x85, 0x02, 0x00, 0x09, 0x0C,
+                                0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x10, 0x00,
+                                0x02, 0xB9, 0x00, 0x25])
+            }
             if reply[index + 3] == DS.QueryCode.usableArea {
                 XCTAssertEqual(Array(reply[(index + 6)...(index + 9)]), [0x00, 80, 0x00, 43])
             }
             index += length
         }
         XCTAssertEqual(index, reply.count)
-        XCTAssertEqual(codes, [0x80, 0x81, 0x86, 0x87, 0x88, 0xA6])
+        XCTAssertEqual(codes, [0x80, 0x81, 0x85, 0x86, 0x87, 0x88, 0xA6])
+    }
+
+    func testCharacterSetsQueryListReportsConfiguredCodePage() throws {
+        let cases: [(String, [UInt8])] = [
+            ("037", [0x02, 0xB9, 0x00, 0x25]),
+            ("277", [0x02, 0xB7, 0x04, 0x76]),
+            ("1047", [0x02, 0xB9, 0x04, 0x17]),
+            ("1142", [0x02, 0xB7, 0x04, 0x76]),
+        ]
+        for (id, identifier) in cases {
+            let processor = DataStreamProcessor(codePage: try XCTUnwrap(CodePage.named(id)))
+            let result = processor.process([0xF3, 0x00, 0x07, 0x01, 0xFF, 0x03, 0x00, 0x85])
+            XCTAssertFalse(result.commandRejected)
+            XCTAssertEqual(result.replies,
+                           [[0x88, 0x00, 0x14, 0x81, 0x85, 0x02, 0x00, 0x09, 0x0C,
+                             0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x10, 0x00] + identifier], id)
+        }
+    }
+
+    func test277ReportsEuroSetWithoutChangingTranslation() throws {
+        let page = try XCTUnwrap(CodePage.named("277"))
+        let processor = DataStreamProcessor(codePage: page)
+        let result = processor.process([0xF3, 0x00, 0x07, 0x01, 0xFF, 0x03, 0x00, 0x85])
+        XCTAssertEqual(result.replies.first?.suffix(4), [0x02, 0xB7, 0x04, 0x76])
+        XCTAssertEqual(processor.codePage.id, "277")
+        XCTAssertEqual(processor.codePage.character(for: 0x5A), "¤")
+        XCTAssertNil(processor.codePage.ebcdic(for: "€"))
+    }
+
+    func testQueryListSelectionAndInvalidRequests() {
+        let processor = DataStreamProcessor()
+        for mode: UInt8 in [0x40, 0x80] {
+            let result = processor.process([0xF3, 0x00, 0x06, 0x01, 0xFF, 0x03, mode])
+            XCTAssertEqual(result.replies, [processor.queryReply()])
+        }
+        for codes: [UInt8] in [[], [0x99]] {
+            let record: [UInt8] = [0xF3, 0x00, UInt8(6 + codes.count), 0x01, 0xFF, 0x03, 0x00] + codes
+            XCTAssertEqual(processor.process(record).replies, [[0x88, 0x00, 0x04, 0x81, 0xFF]])
+        }
+        for request: [UInt8] in [
+            [0xF3, 0x00, 0x05, 0x01, 0xFF, 0x03],
+            [0xF3, 0x00, 0x06, 0x01, 0xFF, 0x03, 0x01],
+        ] {
+            let result = processor.process(request)
+            XCTAssertTrue(result.commandRejected)
+            XCTAssertTrue(result.replies.isEmpty)
+        }
     }
 
     func testReadBuffer() {
@@ -112,10 +205,11 @@ final class SessionTests: XCTestCase {
     private var sent: [UInt8] = []
     private var alarms = 0
 
-    private func connectedSession(tn3270e: Bool = false) -> TN3270Session {
+    private func connectedSession(tn3270e: Bool = false, codePageID: String = "037") -> TN3270Session {
         sent = []
         alarms = 0
-        let session = TN3270Session(settings: ConnectionSettings(host: "zos.example.com", useTN3270E: tn3270e))
+        let session = TN3270Session(settings: ConnectionSettings(
+            host: "zos.example.com", codePageID: codePageID, useTN3270E: tn3270e))
         session.send = { [unowned self] in self.sent += $0 }
         session.onAlarm = { [unowned self] in self.alarms += 1 }
         session.resetForConnection()
@@ -138,6 +232,28 @@ final class SessionTests: XCTestCase {
         record += [0x1D, 0x40, 0x13]
         record += [0x11] + DS.encodeAddress(20, bufferSize: 1920) + [0x1D, 0xF0]
         return record
+    }
+
+    func testCodePageQueryReplyUsesSessionSettingsAcrossReconnects() {
+        for tn3270e in [false, true] {
+            let session = connectedSession(tn3270e: tn3270e, codePageID: "277")
+            var settings = session.settings
+            XCTAssertEqual(session.processor.codePage, session.codePage)
+            settings.codePageID = "1142"
+            session.update(settings: settings)
+            sent = []
+
+            let header: [UInt8] = tn3270e ? [0x00, 0x00, 0x00, 0x00, 0x00] : []
+            session.receive(header + [0xF3, 0x00, 0x07, 0x01, 0xFF, 0xFF, 0x03, 0x00, 0x85,
+                                      Telnet.IAC, Telnet.EOR])
+            XCTAssertEqual(sent,
+                           header + [0x88, 0x00, 0x14, 0x81, 0x85, 0x02, 0x00, 0x09, 0x0C,
+                                     0x00, 0x00, 0x00, 0x00, 0x07, 0x00, 0x10, 0x00,
+                                     0x02, 0xB7, 0x04, 0x76, Telnet.IAC, Telnet.EOR])
+            let reply = session.processor.queryReply()
+            session.resetForConnection()
+            XCTAssertEqual(session.processor.queryReply(), reply)
+        }
     }
 
     func testTypingAndEnterSendsReadModified() {
